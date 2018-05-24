@@ -114,7 +114,17 @@ trait Contexts { self: Analyzer =>
       if (!unit.hasXml || ScalaXmlTopScope == NoSymbol) rootImportsContext
       else rootImportsContext.make(gen.mkImport(ScalaXmlPackage, nme.TopScope, nme.dollarScope))
 
-    val c = contextWithXML.make(tree, unit = unit)
+
+    // todo: best way to create an `Import` instance, independently of wildcard or not?
+    // Trees.scala<internal, api>:381
+    // Mirrors: 174
+    // hierarchy: Import
+    // val pimpedPkg: Symbol = rootMirror.getPackageIfDefined("io.shiftleft.passes.securityprofile")
+    val pimpedPkg = rootMirror.getPackageIfDefined("com.michaelpollmeier.pimped")
+    val contextWithPimped = contextWithXML.make(gen.mkWildcardImport(pimpedPkg))
+
+    val c = contextWithPimped.make(tree, unit = unit)
+    // val c = contextWithXML.make(tree, unit = unit)
 
     c.initRootContext(throwing, checking)
     c
