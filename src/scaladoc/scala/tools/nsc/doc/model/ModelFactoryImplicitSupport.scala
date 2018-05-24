@@ -82,7 +82,7 @@ trait ModelFactoryImplicitSupport {
    *  default Scala imports (Predef._ for example) and the companion object of the current class, if one exists. In the
    *  future we might want to extend this to more complex scopes.
    */
-  def makeImplicitConversions(sym: Symbol, inTpl: DocTemplateImpl): List[ImplicitConversionImpl] =
+  def makeImplicitConversions(sym: Symbol, inTpl: DocTemplateImpl, maxRecursiveIterations: Int): List[ImplicitConversionImpl] = {
     // Nothing and Null are somewhat special -- they can be transformed by any implicit conversion available in scope.
     // But we don't want that, so we'll simply refuse to find implicit conversions on for Nothing and Null
     if (!(sym.isClass || sym.isTrait || sym == AnyRefClass) || sym == NothingClass || sym == NullClass) Nil
@@ -103,7 +103,7 @@ trait ModelFactoryImplicitSupport {
         .map(_.hideImplicitConversions)
         .getOrElse(Nil)
 
-      conversions = conversions filterNot { conv: ImplicitConversionImpl =>
+      conversions = conversions.filterNot { conv: ImplicitConversionImpl =>
         hiddenConversions.contains(conv.conversionShortName) ||
         hiddenConversions.contains(conv.conversionQualifiedName)
       }
@@ -113,12 +113,29 @@ trait ModelFactoryImplicitSupport {
         conversions = conversions.filter((ic: ImplicitConversionImpl) =>
           hardcoded.valueClassFilter(sym.nameString, ic.conversionQualifiedName))
 
+      println("========= before recursion")
+      println(s"sym=$sym, maxRecursiveIterations=$maxRecursiveIterations")
+      conversions.filter(!_.isHiddenConversion).foreach(println)
+
+      if (maxRecursiveIterations > 0) {
+        val ownConversions = conversions.filterNot(_.isHiddenConversion)
+        val recursiveConversions = ownConversions.flatMap { conversion =>
+          makeImplicitConversions(conversion.toType.typeSymbol, inTpl, maxRecursiveIterations - 1)
+        }
+        conversions = conversions ++ recursiveConversions
+      }
+
+      println("========= after recursion")
+      println(s"sym=$sym, maxRecursiveIterations=$maxRecursiveIterations")
+      conversions.filter(!_.isHiddenConversion).foreach(println)
+
       // Put the visible conversions in front
       val (ownConversions, commonConversions) =
         conversions.partition(!_.isHiddenConversion)
 
       ownConversions ::: commonConversions
     }
+  }
 
   /** makeImplicitConversion performs the heavier lifting to get the implicit listing:
    * - for each possible conversion function (also called view)
