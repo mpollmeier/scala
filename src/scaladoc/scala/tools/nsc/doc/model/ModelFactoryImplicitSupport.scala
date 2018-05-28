@@ -82,15 +82,15 @@ trait ModelFactoryImplicitSupport {
    *  default Scala imports (Predef._ for example) and the companion object of the current class, if one exists. In the
    *  future we might want to extend this to more complex scopes.
    */
-  def makeImplicitConversions(sym: Symbol, inTpl: DocTemplateImpl, maxRecursiveIterations: Int): List[ImplicitConversionImpl] = {
+  def makeImplicitConversions(sym: Symbol, inTpl: DocTemplateImpl, maxRecursiveIterations: Int = 1): List[ImplicitConversionImpl] = {
     // Nothing and Null are somewhat special -- they can be transformed by any implicit conversion available in scope.
     // But we don't want that, so we'll simply refuse to find implicit conversions on for Nothing and Null
     if (!(sym.isClass || sym.isTrait || sym == AnyRefClass) || sym == NothingClass || sym == NullClass) Nil
     else {
       val context: global.analyzer.Context = global.analyzer.rootContext(NoCompilationUnit)
 
-      val results = global.analyzer.allViewsFrom(sym.tpe_*, context, sym.typeParams) ++
-        global.analyzer.allViewsFrom(byNameType(sym.tpe_*), context, sym.typeParams)
+      val results = ImplicitConversionFinderCached.get(sym)(context)
+      // results.foreach(x => println(s"${x._1} - ${x._1.getClass}"))
       var conversions = results.flatMap(result => makeImplicitConversion(sym, result._1, result._2, context, inTpl))
       //debug(results.mkString("All views\n  ", "\n  ", "\n"))
       //debug(conversions.mkString("Conversions\n  ", "\n  ", "\n"))
@@ -113,9 +113,9 @@ trait ModelFactoryImplicitSupport {
         conversions = conversions.filter((ic: ImplicitConversionImpl) =>
           hardcoded.valueClassFilter(sym.nameString, ic.conversionQualifiedName))
 
-      println("========= before recursion")
-      println(s"sym=$sym, maxRecursiveIterations=$maxRecursiveIterations")
-      conversions.filter(!_.isHiddenConversion).foreach(println)
+      // println("========= before recursion")
+      // println(s"sym=$sym, maxRecursiveIterations=$maxRecursiveIterations")
+      // conversions.filter(!_.isHiddenConversion).foreach(println)
 
       if (maxRecursiveIterations > 0) {
         val ownConversions = conversions.filterNot(_.isHiddenConversion)
@@ -125,9 +125,9 @@ trait ModelFactoryImplicitSupport {
         conversions = conversions ++ recursiveConversions
       }
 
-      println("========= after recursion")
-      println(s"sym=$sym, maxRecursiveIterations=$maxRecursiveIterations")
-      conversions.filter(!_.isHiddenConversion).foreach(println)
+      // println("========= after recursion")
+      // println(s"sym=$sym, maxRecursiveIterations=$maxRecursiveIterations")
+      // conversions.filter(!_.isHiddenConversion).foreach(println)
 
       // Put the visible conversions in front
       val (ownConversions, commonConversions) =
@@ -610,5 +610,21 @@ trait ModelFactoryImplicitSupport {
                      // a.foo(Right(4.5d)) prints out 3 :)
       false
     } else true // the member structure is different foo(3, 5) vs foo(3)(5)
+  }
+
+  /** cached implicit conversion finder 
+    * warning: dumb implementation follows, this is just a POC to get an initial PR out */
+  object ImplicitConversionFinderCached {
+    type Results = List[(global.analyzer.SearchResult, List[global.analyzer.global.TypeConstraint])]
+    val cache = mutable.Map[Symbol, Results]()
+
+    /* TODO: factor in more than Symbol - it doesn't contain the package, right? */
+    def get(sym: Symbol)(context: global.analyzer.Context): Results =
+      if (cache.contains(sym))
+        cache.get(sym).get
+      else
+        global.analyzer.allViewsFrom(sym.tpe_*, context, sym.typeParams) ++
+          global.analyzer.allViewsFrom(byNameType(sym.tpe_*), context, sym.typeParams)
+
   }
 }
