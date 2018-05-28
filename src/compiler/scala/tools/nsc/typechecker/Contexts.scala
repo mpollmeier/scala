@@ -119,8 +119,8 @@ trait Contexts { self: Analyzer =>
     // Trees.scala<internal, api>:381
     // Mirrors: 174
     // hierarchy: Import
-    // val pimpedPkg: Symbol = rootMirror.getPackageIfDefined("io.shiftleft.passes.securityprofile")
-    val pimpedPkg = rootMirror.getPackageIfDefined("com.michaelpollmeier.pimped")
+    val pimpedPkg: Symbol = rootMirror.getPackageIfDefined("io.shiftleft.passes.securityprofile")
+    // val pimpedPkg = rootMirror.getPackageIfDefined("com.michaelpollmeier.pimped")
     val contextWithPimped = contextWithXML.make(gen.mkWildcardImport(pimpedPkg))
 
     val c = contextWithPimped.make(tree, unit = unit)
