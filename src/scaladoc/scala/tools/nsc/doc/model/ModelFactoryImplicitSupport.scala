@@ -82,7 +82,7 @@ trait ModelFactoryImplicitSupport {
    *  default Scala imports (Predef._ for example) and the companion object of the current class, if one exists. In the
    *  future we might want to extend this to more complex scopes.
    */
-  def makeImplicitConversions(sym: Symbol, inTpl: DocTemplateImpl, maxRecursiveIterations: Int = 1): List[ImplicitConversionImpl] = {
+  def makeImplicitConversions(sym: Symbol, inTpl: DocTemplateImpl, maxRecursiveIterations: Int = 1, isRecursive: Boolean = false): List[ImplicitConversionImpl] = {
     // Nothing and Null are somewhat special -- they can be transformed by any implicit conversion available in scope.
     // But we don't want that, so we'll simply refuse to find implicit conversions on for Nothing and Null
     if (!(sym.isClass || sym.isTrait || sym == AnyRefClass) || sym == NothingClass || sym == NullClass) Nil
@@ -91,7 +91,7 @@ trait ModelFactoryImplicitSupport {
 
       val results = ImplicitConversionFinderCached.get(sym)(context)
       // results.foreach(x => println(s"${x._1} - ${x._1.getClass}"))
-      var conversions = results.flatMap(result => makeImplicitConversion(sym, result._1, result._2, context, inTpl))
+      var conversions = results.flatMap(result => makeImplicitConversion(sym, result._1, result._2, context, inTpl, isRecursive))
       //debug(results.mkString("All views\n  ", "\n  ", "\n"))
       //debug(conversions.mkString("Conversions\n  ", "\n  ", "\n"))
 
@@ -120,7 +120,7 @@ trait ModelFactoryImplicitSupport {
       if (maxRecursiveIterations > 0) {
         val ownConversions = conversions.filterNot(_.isHiddenConversion)
         val recursiveConversions = ownConversions.flatMap { conversion =>
-          makeImplicitConversions(conversion.toType.typeSymbol, inTpl, maxRecursiveIterations - 1)
+          makeImplicitConversions(conversion.toType.typeSymbol, inTpl, maxRecursiveIterations - 1, isRecursive = true)
         }
         conversions = conversions ++ recursiveConversions
       }
@@ -165,7 +165,7 @@ trait ModelFactoryImplicitSupport {
    *  - we also need to transform implicit parameters in the view's signature into constraints, such that Numeric[T4]
    * appears as a constraint
    */
-  def makeImplicitConversion(sym: Symbol, result: SearchResult, constrs: List[TypeConstraint], context: Context, inTpl: DocTemplateImpl): List[ImplicitConversionImpl] =
+  def makeImplicitConversion(sym: Symbol, result: SearchResult, constrs: List[TypeConstraint], context: Context, inTpl: DocTemplateImpl, isRecursive: Boolean): List[ImplicitConversionImpl] =
     if (result.tree == EmptyTree) Nil
     else {
       // `result` will contain the type of the view (= implicit conversion method)
@@ -229,7 +229,7 @@ trait ModelFactoryImplicitSupport {
         val substConstraints = makeSubstitutionConstraints(result.subst, inTpl)
         val constraints = implParamConstraints ::: boundsConstraints ::: substConstraints
 
-        List(new ImplicitConversionImpl(sym, result.tree.symbol, toType, constraints, inTpl))
+        List(new ImplicitConversionImpl(sym, result.tree.symbol, toType, constraints, inTpl, isRecursive))
       } catch {
         case i: ImplicitNotFound =>
           //debug(s"  Eliminating: $toType")
@@ -364,7 +364,8 @@ trait ModelFactoryImplicitSupport {
     val convSym: Symbol,
     val toType: Type,
     val constrs: List[Constraint],
-    inTpl: DocTemplateImpl)
+    inTpl: DocTemplateImpl,
+    val isRecursive: Boolean)
       extends ImplicitConversion {
 
     def source: DocTemplateEntity = inTpl
@@ -450,6 +451,12 @@ trait ModelFactoryImplicitSupport {
                          inTpl: DocTemplateImpl): Map[MemberEntity, ImplicitMemberShadowing] = {
     assert(modelFinished)
 
+    val debug = inTpl.toString == "io.shiftleft.queryprimitives.steps.NodeSteps"
+    // members.foreach(println)
+    // if (debug) convs.filterNot(_.isHiddenConversion).foreach{conv =>
+    //   println(s"$conv - ${conv.isRecursive}") // contains all conversions, also recursive findings. idea: mark them as recursive and don't list them as 'shadowed'
+    // } 
+
     val shadowingTable = mutable.Map[MemberEntity, ImplicitMemberShadowing]()
     val membersByName: Map[Name, List[MemberImpl]] = members.groupBy(_.sym.name)
     val convsByMember = (Map.empty[MemberImpl, ImplicitConversionImpl] /: convs) {
@@ -485,6 +492,20 @@ trait ModelFactoryImplicitSupport {
         }
       }
     }
+
+    // if (inTpl.toString == "io.shiftleft.queryprimitives.steps.types.structure.Method") {
+    //   println(s"shadowing table for $inTpl:")
+    //   shadowingTable.foreach { case (member, shadowing) =>
+    //     val memberString = member.toString
+    //     val method = memberString.substring(memberString.indexOf("#") + 1)
+    //     val filteredOut = Set("+", "->", "ensuring", "formatted")
+    //     if (!filteredOut.contains(method)) {
+    //       println(s"member: $member")
+    //       println(s"shadowing: ${shadowing.shadowingMembers}")
+    //       println(s"ambiguous: ${shadowing.ambiguatingMembers}")
+    //     }
+    //   }
+    // }
 
     shadowingTable.toMap
   }
